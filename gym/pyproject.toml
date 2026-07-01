@@ -1,0 +1,16 @@
+[project]
+name = "paper-loop2-gym"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "imageio>=2.37.3",
+    "imageio-ffmpeg>=0.6.0",
+    "numba>=0.65.1",
+    "numpy>=2.4.6",
+    "onnx>=1.22.0",
+    "onnxscript>=0.7.0",
+    "pillow>=12.2.0",
+    "tensorboard>=2.20.0",
+    "torch>=2.12.1",
+]

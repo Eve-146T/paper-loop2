@@ -1,0 +1,36 @@
+# Gradle / build
+.gradle/
+build/
+captures/
+.cxx/
+.externalNativeBuild/
+
+# Generated libGDX native libraries (re-extracted by copyAndroidNatives)
+app/libs/
+
+# Local config
+local.properties
+keystore.properties
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# Artifacts
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# RL gym (Python) + web — heavy/regenerable artifacts.
+# NOTE: the trained bot weights in web/models/*.onnx ARE committed (the game needs them).
+gym/.venv/
+gym/checkpoints/
+gym/runs/
+gym/replays/
+gym/.numba_cache/
+web/node_modules/
+**/__pycache__/
+*.pyc
+*.log

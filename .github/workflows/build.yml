@@ -1,0 +1,119 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Branch / PR / manual builds: compile a debug APK as a build check.
+  debug:
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: paper-loop2-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  # Tag builds (v*): produce a release-signed APK and publish a GitHub Release.
+  release:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret is not set — cannot sign the release." >&2
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/eve-release.keystore"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build signed release APKs (per-ABI splits + universal)
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/eve-release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Name the APKs
+        run: |
+          tag="${{ github.ref_name }}"
+          out=app/build/outputs/apk/release
+          # Universal APK for direct-download sideloaders (F-Droid uses the per-ABI ones).
+          cp "$out/app-universal-release.apk"   "paper-loop2-${tag}.apk"
+          # Per-ABI splits — the names F-Droid's Binaries: URLs point at.
+          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+            cp "$out/app-${abi}-release.apk" "paper-loop2-${tag}-${abi}.apk"
+          done
+          ls -la paper-loop2-*.apk
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.ref_name }}"
+          gh release create "$tag" \
+            "paper-loop2-${tag}.apk" \
+            "paper-loop2-${tag}-armeabi-v7a.apk" \
+            "paper-loop2-${tag}-arm64-v8a.apk" \
+            "paper-loop2-${tag}-x86.apk" \
+            "paper-loop2-${tag}-x86_64.apk" \
+            --title "Paper Loop 2 ${tag}" \
+            --generate-notes
+
+      - name: Upload release APK artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: paper-loop2-${{ github.ref_name }}
+          path: paper-loop2-*.apk
+          if-no-files-found: error

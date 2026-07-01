@@ -1,0 +1,31 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Paper Loop 2: a captured territory blob with a ribbon trail looping out to the square
+         head that just closed it. Centred inside the adaptive-icon safe zone so it survives a
+         circular mask. (Also the monochrome icon.) -->
+    <!-- territory: 3D rim (darker, shifted down) then the blob -->
+    <path android:fillColor="#9228AC"
+        android:pathData="M30,58.3 A22,22 0 1 0 74,58.3 A22,22 0 1 0 30,58.3 Z"/>
+    <path android:fillColor="#C942E2"
+        android:pathData="M30,55 A22,22 0 1 0 74,55 A22,22 0 1 0 30,55 Z"/>
+    <!-- captured-land highlight -->
+    <path android:fillColor="#D66CEA"
+        android:pathData="M37,51 A11,11 0 1 0 59,51 A11,11 0 1 0 37,51 Z"/>
+    <!-- trail ribbon: rim then the lighter top -->
+    <path android:strokeColor="#9228AC" android:strokeWidth="9.8" android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M52,51.3 C58,36.3 70,42.3 70,56.3"/>
+    <path android:strokeColor="#E9A8F6" android:strokeWidth="9.8" android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M52,49 C58,34 70,40 70,54"/>
+    <!-- the square head (with drop shadow + paper gap so it reads on its own turf) -->
+    <path android:fillColor="#4012141C"
+        android:pathData="M65.545,49.545 L74.455,49.545 A2.295,2.295 0 0 1 76.75,51.84 L76.75,60.75 A2.295,2.295 0 0 1 74.455,63.045 L65.545,63.045 A2.295,2.295 0 0 1 63.25,60.75 L63.25,51.84 A2.295,2.295 0 0 1 65.545,49.545 Z"/>
+    <group android:rotation="-15" android:pivotX="70" android:pivotY="54">
+        <path android:fillColor="#EDE8D6"
+            android:pathData="M65.545,45.63 L74.455,45.63 A3.915,3.915 0 0 1 78.37,49.545 L78.37,58.455 A3.915,3.915 0 0 1 74.455,62.37 L65.545,62.37 A3.915,3.915 0 0 1 61.63,58.455 L61.63,49.545 A3.915,3.915 0 0 1 65.545,45.63 Z"/>
+        <path android:fillColor="#C942E2"
+            android:pathData="M65.545,47.25 L74.455,47.25 A2.295,2.295 0 0 1 76.75,49.545 L76.75,58.455 A2.295,2.295 0 0 1 74.455,60.75 L65.545,60.75 A2.295,2.295 0 0 1 63.25,58.455 L63.25,49.545 A2.295,2.295 0 0 1 65.545,47.25 Z"/>
+    </group>
+</vector>

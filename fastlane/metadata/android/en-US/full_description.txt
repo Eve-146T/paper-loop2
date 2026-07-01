@@ -1,0 +1,16 @@
+You are a snek. 🐍 Loop out from your turf, draw a shape, and close it to swallow everything inside — the more ground you claim, the bigger you get. Your tail is your weak spot: slice a rival snek's tail to knock them out, and never let anyone slice yours.
+
+There is no grid here — your head carries a real heading and banks into smooth, continuous curves as you steer, so carving a daring arc around a rival and sealing it off feels like drawing, not stepping. The arena is a circle — drift too steeply into the wall and you are gone.
+
+Your opponents are neural bots: a small reinforcement-learning network trained by self-play, running entirely on your device. Pick AI HARD to face the trained net, EASY SCRIPTED for a gentler hand-written bot, or NO BOTS to paint in peace. Inference runs off the render thread, so it stays smooth even on modest phones.
+
+Features:
+
+* Free, continuous movement — smooth curves, not four-direction steps.
+* On-device neural self-play bots (no network needed) plus a scripted fallback.
+* Three opponent modes and an optional respawn toggle.
+* A circular arena with smooth, rounded territories and a clean ribbon trail.
+* A local high score per mode. No accounts, no ads, no tracking, no network access.
+* Tiny download and fully playable offline.
+
+Paper Loop 2 is built with libGDX and is free and open-source software, licensed under the GNU General Public License v3.0.

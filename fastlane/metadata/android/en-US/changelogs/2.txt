@@ -1,0 +1,1 @@
+First public release. Free-movement territory capture with on-device neural self-play bots, three opponent modes, and a circular arena. Fully offline.
