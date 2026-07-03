@@ -19,10 +19,6 @@ Latest APK: [GitHub releases](https://github.com/Eve-146T/paper-loop2/releases/l
 - opponents are on-device neural bots trained by self-play
 
 
-## Questions 
-- why paperloop ***2***
->paperloop 1 is coming soon 
-
 ## Screenshots
 
 <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg"><img width="250" alt="Screenshot 1" src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg?raw=true"></a>
