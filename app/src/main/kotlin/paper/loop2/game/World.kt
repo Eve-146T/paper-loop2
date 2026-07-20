@@ -38,6 +38,27 @@ const val MAX_TURN_PER_DECISION = TURN_RATE * DECIDE_SUBSTEPS * SUB_DT // max he
 const val TRAIL_RETRACT = 110f // cells/sec a dead player's trail zips back home
 const val RIPPLE_SPEED = 32f   // cells/sec the territory then dissolves outward (virus ripple)
 
+// --- bot respawn siting (github issue #2 "spawns too sudden") ----------------
+// A returning bot may only land where the whole starting disc is empty ground (no turf, no live
+// trail) with no living head nearby, and the site is TELEGRAPHED for SPAWN_WARN seconds first.
+const val SPAWN_WARN = 1.6f    // seconds a pending spawn site is shown before the bot lands on it
+const val SPAWN_CLEAR = 26f    // cells: how far a new site must be from every living head
+const val SPAWN_ABORT = 15f    // cells: a head coming this close to a telegraphed site cancels it
+const val SPAWN_PAD = 2f       // cells of clear ground required *around* the starting disc
+
+/** Number of grid cells whose centre lies inside the circular arena. This is the score-percent
+ *  denominator (NOT the full GW*GH square) so owning the whole circle reads as 100%, not ~70% —
+ *  the circle is only ~π·ARENA_R²/(GW·GH) of the square grid. Computed once from the consts. */
+val ARENA_CELLS: Int = run {
+    var n = 0
+    val r2 = ARENA_R * ARENA_R
+    for (yy in 0 until GH) for (xx in 0 until GW) {
+        val dx = xx + 0.5f - ARENA_CX; val dy = yy + 0.5f - ARENA_CY
+        if (dx * dx + dy * dy <= r2) n++
+    }
+    n
+}
+
 /** Result snapshot recorded when the human dies. */
 data class DeadStats(val scoreTenths: Int, val rank: Int, val total: Int, val kills: Int)
 
@@ -63,7 +84,7 @@ class World(seed: Long = System.nanoTime()) {
 
     val rng: Random = Random(seed)
     var humanDeadStats: DeadStats? = null; private set
-    var respawnEnabled = true
+    var respawnEnabled = true            // do eliminated bots come back? (the human always ends the run)
     var stepCount = 0; private set
     var ownerVersion = 0; private set    // bumped on every territory change (renderer rebuild trigger)
     var resetGen = 0; private set        // bumped on reset() so the renderer fully rebuilds (a respawn
@@ -157,7 +178,7 @@ class World(seed: Long = System.nanoTime()) {
         val d = rng.nextInt(4)
         p.heading = d * HALF_PI; p.targetHeading = p.heading; p.botGoal = p.heading
         p.hasTrail = false; p.trailX.clear(); p.trailY.clear(); p.trailCells.clear()
-        p.alive = true; p.deathFx = 0f; p.respawn = 0f; p.dyingFrac = 0f
+        p.alive = true; p.deathFx = 0f; p.respawn = 0f; p.spawnWarn = 0f; p.dyingFrac = 0f
         p.botPhase = 0; p.botTimer = rng.nextFloat() * BOT_DECIDE_DT; p.botRem = 0f
         // fresh life: clear the (stale, possibly large) owned-cell bbox; the disc below repopulates it
         p.resetBounds()
@@ -172,18 +193,58 @@ class World(seed: Long = System.nanoTime()) {
         p.peakArea = p.area
     }
 
-    private fun respawnBot(p: Player) {
-        var best = intArrayOf(ARENA_CX.toInt(), ARENA_CY.toInt()); var bestEmpty = -1
-        repeat(50) {
-            val ang = rng.nextFloat() * TWO_PI; val rr = rng.nextFloat() * (ARENA_R - START_R - 4f)
+    /** A dead bot waiting to come back: run its respawn clock for [dt]. It first reserves a safe site
+     *  and shows it for [SPAWN_WARN] seconds (the telegraph) — only then does it actually land. */
+    private fun tickRespawn(p: Player, dt: Float) {
+        if (!respawnEnabled) { p.respawn = 0f; p.spawnWarn = 0f; return }
+        if (p.spawnWarn > 0f) {                     // site is telegraphed; land when the warning expires
+            // someone walked onto/next to the reserved spot in the meantime -> drop it, look elsewhere
+            if (!siteUsable(p.spawnCx, p.spawnCy, SPAWN_ABORT)) { p.spawnWarn = 0f; p.respawn = 0.3f; return }
+            p.spawnWarn -= dt
+            if (p.spawnWarn <= 0f) spawnAt(p, p.spawnCx, p.spawnCy)
+            return
+        }
+        if (p.respawn <= 0f) return
+        p.respawn -= dt
+        if (p.respawn > 0f) return
+        val site = pickSafeSite()
+        if (site < 0) { p.respawn = 0.4f + rng.nextFloat() * 0.4f; return }  // no room; look again shortly
+        p.spawnCx = site % GW; p.spawnCy = site / GW; p.spawnWarn = SPAWN_WARN
+    }
+
+    /** A cell index for a spawn site that is clear of turf, trails and every living head, or -1 if
+     *  none was found this attempt (the bot then stays dead and tries again shortly). */
+    private fun pickSafeSite(): Int {
+        repeat(60) {
+            val ang = rng.nextFloat() * TWO_PI
+            val rr = sqrt(rng.nextFloat()) * (ARENA_R - START_R - 4f)   // sqrt = uniform over the disc
             val cx = (ARENA_CX + cos(ang) * rr).toInt().coerceIn(8, GW - 9)
             val cy = (ARENA_CY + sin(ang) * rr).toInt().coerceIn(8, GH - 9)
-            var empty = 0
-            for (yy in cy - 4..cy + 4) for (xx in cx - 4..cx + 4)
-                if (inBounds(xx, yy) && owner[idx(xx, yy)].toInt() == 0) empty++
-            if (empty > bestEmpty) { bestEmpty = empty; best = intArrayOf(cx, cy) }
+            if (siteUsable(cx, cy, SPAWN_CLEAR)) return idx(cx, cy)
         }
-        spawnAt(p, best[0], best[1])
+        return -1
+    }
+
+    /** Is (cx,cy) a legal spawn site? The whole starting disc (+[SPAWN_PAD]) must be empty,
+     *  in-bounds ground carrying no live trail — so the disc can never overwrite someone's territory
+     *  or erase their ribbon — and no living head may be within [headClear] cells of it. */
+    private fun siteUsable(cx: Int, cy: Int, headClear: Float): Boolean {
+        val ccx = cx + 0.5f; val ccy = cy + 0.5f
+        for (q in players) if (q.alive) {
+            val dx = q.x - ccx; val dy = q.y - ccy
+            if (dx * dx + dy * dy < headClear * headClear) return false
+        }
+        val rad = START_R + SPAWN_PAD
+        val r = ceil(rad).toInt()
+        for (yy in cy - r..cy + r) for (xx in cx - r..cx + r) {
+            val dx = xx + 0.5f - ccx; val dy = yy + 0.5f - ccy
+            if (dx * dx + dy * dy <= rad * rad) {
+                if (!inBounds(xx, yy)) return false
+                val i = idx(xx, yy)
+                if (owner[i].toInt() != 0 || trail[i].toInt() != 0) return false
+            }
+        }
+        return true
     }
 
     // --- per-frame ---------------------------------------------------------
@@ -195,10 +256,7 @@ class World(seed: Long = System.nanoTime()) {
                 p.dyingFrac -= dt * TRAIL_RETRACT / p.deathArc
                 if (p.dyingFrac <= 0f) { p.dyingFrac = 0f; p.trailX.clear(); p.trailY.clear() }
             }
-            if (!p.alive && !p.isHuman && p.respawn > 0f) {
-                p.respawn -= dt
-                if (p.respawn <= 0f) respawnBot(p)
-            }
+            if (!p.alive && !p.isHuman) tickRespawn(p, dt)
         }
         acc += dt
         var guard = 0
@@ -558,7 +616,9 @@ class World(seed: Long = System.nanoTime()) {
         return cnt
     }
 
-    fun toTenths(area: Int): Int = ((area * 1000f) / (GW * GH)).roundToInt()
+    // Percent of the *arena* (the circle), so filling the whole map reads 100.0% — not ~70%.
+    // Clamped to 1000 because the trail brush can stamp a hair past ARENA_R at the rim.
+    fun toTenths(area: Int): Int = ((area * 1000f) / ARENA_CELLS).roundToInt().coerceIn(0, 1000)
     fun percentTenths(p: Player): Int = toTenths(p.area)
 
     companion object {

@@ -115,6 +115,23 @@ class Hud(private val ui: Ui) {
                 else { val tr = trail[id].toInt(); if (tr != 0) trailRgba[players[tr - 1].colorIdx % trailRgba.size] else arenaRgba }
             }
         }
+        // pending bot respawns: ring the reserved site so an incoming spawn is visible
+        // even when it's off-camera — sites are placed well away from every head, so they usually are
+        for (p in players) if (p.spawnWarn > 0f) {
+            val rgba = trailRgba[p.colorIdx % trailRgba.size]
+            val r = START_R.toInt()
+            for (y in p.spawnCy - r..p.spawnCy + r) {
+                if (y !in 0 until GH) continue
+                val rowBase = (GH - 1 - y) * GW
+                val dy = (y - p.spawnCy).toFloat()
+                for (x in p.spawnCx - r..p.spawnCx + r) {
+                    if (x !in 0 until GW) continue
+                    val dx = (x - p.spawnCx).toFloat()
+                    val d = sqrt(dx * dx + dy * dy)
+                    if (d > START_R - 1.5f && d <= START_R) arr[rowBase + x] = rgba
+                }
+            }
+        }
         val ib = mmPix.pixels.asIntBuffer(); ib.position(0); ib.put(arr)
         mmPix.pixels.position(0)
         mmTex.draw(mmPix, 0, 0)

@@ -58,7 +58,13 @@ class Player(
 
     // render / fx
     var deathFx = 0f                // 1 -> 0 death burst
-    var respawn = 0f                // seconds until a dead bot respawns
+    var respawn = 0f                // seconds until a dead bot respawns (or looks for a site again)
+    // Respawn telegraph: seconds left before this bot lands on the reserved site (0 = none pending),
+    // and the cell it will land on. The renderer/minimap draw it so a spawn is never a surprise;
+    // World.siteUsable re-checks it every frame and drops it if anyone comes close.
+    var spawnWarn = 0f
+    var spawnCx = 0
+    var spawnCy = 0
     var dyingFrac = 0f             // 1 -> 0: on death the trail ribbon zips back (kept for rendering)
     var deathArc = 1f              // trail arc length at death (drives the retract speed)
 

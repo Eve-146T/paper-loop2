@@ -1,0 +1,3 @@
+Bots no longer pop up on top of you. A returning bot only lands on clear ground well away from every player, and its landing spot is marked for a moment first — on the map and the minimap — so you can steer around it. It can no longer overwrite anyone's territory or cut a trail as it arrives.
+
+The score percentage now measures the round arena instead of the square grid behind it, so filling the whole map reads 100% rather than about 70%.

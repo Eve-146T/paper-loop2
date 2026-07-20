@@ -60,7 +60,9 @@ Toolchain: AGP 8.7.3, Kotlin 2.0.21, Gradle 8.13, libGDX 1.13.1, min/target/comp
 The **core simulation is pure Kotlin with no libGDX/Android imports** (see the effect seam below), so
 it runs headless on the JVM. `app/src/test/kotlin/paper/loop2/game/SimTest.kt` drives `World` with a
 fixed sub-step and checks the fundamentals: capture grows territory, the incremental `area` count
-matches the grid, the wall and self-crossing kill, and a 40s 8-player bot run stays stable + productive.
+matches the grid, the wall and self-crossing kill, a 40s 8-player bot run stays stable + productive, the
+score % is of the **arena** (owning the whole circle = 100%), and bot respawn behaves (it telegraphs,
+never lands on turf or near a head, and stays dead entirely when respawn is off).
 **Run `:app:testDebugUnitTest` after any change to `World`/`Player`/`Bot`/`Geom`.** Keep these four
 files free of libGDX/Android imports so the tests keep compiling on plain JVM.
 
@@ -118,7 +120,15 @@ Package root `paper.loop2` (under `app/src/main/kotlin/`). `App` inits the Andro
     on a slow device); `World.ownerVersion` bumps on every territory change to trigger renderer rebuilds.
   - **Death dissolve** (`killPlayer`→`startDissolve`/`advanceDissolves`): unchanged from Paper Loop —
     the trail retracts to its entry point, then the territory dissolves outward as a circular ripple,
-    flashing in the dying colour. Bots respawn (`respawnBot`) if `respawnEnabled`; the human ends the run.
+    flashing in the dying colour. Bots come back if `respawnEnabled`; the human ends the run.
+  - **Bot respawn siting** (`tickRespawn`/`pickSafeSite`/`siteUsable`), the fix for github issue #2
+    *"spawns too sudden"*: a returning bot is only sited where the whole starting disc **+`SPAWN_PAD`
+    is empty ground carrying no live trail** (so a spawn can never overwrite turf, erase a ribbon, or
+    capture out someone's exit cell and start-block them) **and** no living head is within
+    `SPAWN_CLEAR`. The site is then **telegraphed** for `SPAWN_WARN` seconds (`Player.spawnWarn`/
+    `spawnCx`/`spawnCy`) before the bot lands, re-validated every frame and dropped if anyone comes
+    within `SPAWN_ABORT`. If no site is free the bot simply **stays dead** and looks again shortly —
+    in a nearly-full arena that degrades gracefully toward NO RESPAWN.
   - **Invariant: sound/haptics fire for HUMAN events only** — guarded by `p.isHuman`. Preserve this.
   - **Effect seam:** `World` has `onSound`/`onHaptic`/`onLog` function properties (default no-ops),
     wired by `GameScreen` to `SoundFx`/`Haptics`/`Gdx.app.log`. This is what keeps `World` free of
@@ -171,7 +181,9 @@ Package root `paper.loop2` (under `app/src/main/kotlin/`). `App` inits the Andro
 - **`WorldRenderer`** — the free-movement look (see below).
 - **`Hud`** — small top-left `%` + `#rank · best`, a `Pixmap`→`Texture` minimap (territories + trails),
   the floating joystick, and floating name labels (`(You)` for the human) anchored above each head's
-  projected top edge. Reads continuous `p.x`,`p.y` (no grid-cell `+0.5`).
+  projected top edge. Reads continuous `p.x`,`p.y` (no grid-cell `+0.5`). The minimap also **rings any
+  pending respawn site** (`spawnWarn > 0`) — the site is placed well away from every head, so it is
+  usually off-camera and the minimap is where you notice it coming.
 - **`Ui`/`Draw`** — shared screen-space rendering context + `roundRect` helper (unchanged from sibling).
 
 ### Rendering & the smooth look (`WorldRenderer`)
@@ -216,6 +228,11 @@ turfs/trails/heads are frustum-culled (see below).
 - **Head** = a small team-colour square oriented to `heading`, with a **drop shadow shifted down in
   world space** (consistent at any heading — not a rotated-down quad, which read as a wedge). Death = an
   expanding burst. 2× MSAA (`AndroidApplicationConfiguration.numSamples`) cleans the diagonal edges.
+- **Spawn telegraph** (`drawSpawnMarker`, drawn in the same pass as bot trails/heads): a pending
+  respawn site shows a translucent disc in the bot's colour with a ring closing in on it,
+  animated straight off `Player.spawnWarn` (no renderer clock). **Gotcha:** `SpriteBatch.end()` turns
+  GL blending back **off**, so that pass re-enables `GL_BLEND` — without it the "translucent" disc
+  composites as solid colour and reads as territory. Don't remove that `glEnable`.
 - The **minimap** (`Hud`) masks cells outside `ARENA_R` to transparent, so it reads as a disc too. It is
   refreshed ~5×/s (throttled) and packed into an `IntArray` for one **bulk** upload (not per-pixel
   `drawPixel`), so it's cheap even on a weak core.
@@ -247,7 +264,9 @@ separate Python project (`gym/`, managed by `uv`; PyTorch + Numba + numpy; uses 
   elimination), continuous collisions (head-to-head turf/area priority, trail-cut + credit, geometric
   **self-cross** with `SELF_GRACE`), and the **circular-wall** slide/die. One env step = one *decision*
   = `SUBSTEPS` (=4) fixed sub-steps holding the chosen target heading (matches on-device cadence).
-  Permadeath by default; `respawn` knob mirrors the game's RESPAWN toggle. `encode_all` = the
+  Permadeath by default; the `respawn` knob mirrors the game's RESPAWN toggle (the game's safe
+  respawn siting + telegraph is a **game-side quality-of-life change only** — it doesn't touch the
+  rule kernel or the observation, so gym parity and the shipped net are unaffected). `encode_all` = the
   egocentric crop **rotated forward=up** (6 grid channels + 12 scalars) — **ported 1:1 to `BotNet.encodeAt`**.
 - **`paper_loop/rules.py`** — constants mirrored 1:1 from `World.kt` (single source of truth).
 - **`paper_loop/scripted.py`** — Numba port of `Bot.kt` (the benchmark opponent).
@@ -273,6 +292,10 @@ separate Python project (`gym/`, managed by `uv`; PyTorch + Numba + numpy; uses 
   `const`s at the top of **`World.kt`** (`GW`/`GH`, `ARENA_CX`/`ARENA_CY`/`ARENA_R`, `SUB_DT`, `SPEED`,
   `TURN_RATE`, `HEAD_R`, `TRAIL_R`, `START_R`, `SELF_GRACE`, `HEAD_KILL`, `WALL_MARGIN`, `WALL_DIE_DOT`
   (wall graze/slam threshold), `TRAIL_ROOT` (ribbon attach depth), `TRAIL_RETRACT`, `RIPPLE_SPEED`).
+- Bot respawn feel: `SPAWN_WARN` (telegraph length), `SPAWN_CLEAR` (how far a new site must be from any
+  head), `SPAWN_ABORT` (how close a head must get to cancel a telegraphed site), `SPAWN_PAD` (clear
+  ground required around the disc) in **`World.kt`**. Score % denominator: `ARENA_CELLS` (the circle,
+  **not** `GW*GH` — that was github issue #1: a full map read ~70%).
 - Number of opponents: `numBots` in `PaperLoopGame`. Scripted bot behaviour: `const`s at the top of
   `Bot.kt`. Neural bots: retrain in `gym/` and re-`export.py`; decision cadence + action mapping in
   `World.kt` (`DECIDE_SUBSTEPS`, `N_ACTIONS`, `MAX_TURN_PER_DECISION`) **must match the gym's `rules.py`**.

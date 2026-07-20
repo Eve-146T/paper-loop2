@@ -26,7 +26,9 @@ object Settings {
         hapticsOn = prefs.getBoolean("haptics", true)
         darkMode = prefs.getBoolean("dark", false)
         botMode = prefs.getInt("botMode", 0).coerceIn(0, 2)
-        respawnBots = prefs.getBoolean("respawn", true)
+        // "respawnMode" is a leftover from the build that briefly offered old/new siting (2 = off)
+        respawnBots = if (prefs.contains("respawnMode")) prefs.getInt("respawnMode", 0) != 2
+        else prefs.getBoolean("respawn", true)
     }
 
     fun setBotMode(v: Int) {
@@ -36,7 +38,7 @@ object Settings {
 
     fun setRespawnBots(v: Boolean) {
         respawnBots = v
-        prefs.edit().putBoolean("respawn", v).apply()
+        prefs.edit().putBoolean("respawn", v).remove("respawnMode").apply()
     }
 
     fun setDarkMode(v: Boolean) {

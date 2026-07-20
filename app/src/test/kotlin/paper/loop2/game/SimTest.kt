@@ -38,6 +38,80 @@ class SimTest {
     }
 
     @Test
+    fun fullArenaReadsHundredPercent() {
+        // The score % is of the circular arena, not the square grid — so owning the whole circle
+        // must read 100.0%, not ~70% (the old GW*GH denominator bug).
+        assertTrue(ARENA_CELLS < GW * GH, "arena circle must be smaller than the square grid")
+        val ratio = ARENA_CELLS.toFloat() / (GW * GH)
+        assertTrue(ratio in 0.6f..0.8f, "sanity: circle is ~70% of the grid, was $ratio")
+        val w = World(seed = 1L)
+        w.reset(numBots = 0, numColors = 12)
+        assertEquals(1000, w.toTenths(ARENA_CELLS), "owning every arena cell must read 100.0%")
+        assertEquals(1000, w.toTenths(ARENA_CELLS + 500), "a hair past the rim is clamped to 100.0%")
+        assertTrue(w.percentTenths(w.human) < 100, "a fresh starting disc is a small single-digit %")
+    }
+
+    /** Give player [id] the whole circular arena as territory (everyone else keeps nothing). */
+    private fun fillArena(w: World, id: Int) {
+        for (i in w.owner.indices) w.owner[i] = 0
+        for (yy in 0 until GH) for (xx in 0 until GW) {
+            val dx = xx + 0.5f - ARENA_CX; val dy = yy + 0.5f - ARENA_CY
+            if (dx * dx + dy * dy <= ARENA_R * ARENA_R) w.owner[w.idx(xx, yy)] = (id + 1).toByte()
+        }
+    }
+
+    @Test
+    fun respawnNeverLandsOnTurf() {
+        // Fill the whole arena with player 1's territory and let a dead bot try to come back: there
+        // is no clear ground left, so it must stay dead rather than carve into the turf.
+        val w = World(seed = 5L)
+        w.reset(numBots = 2, numColors = 12)
+        val filler = w.players[1]
+        fillArena(w, filler.id)
+        val victim = w.players[2]
+        victim.alive = false; victim.respawn = 0.01f
+        tick(w, 3f)                                    // plenty of respawn attempts
+        assertFalse(victim.alive, "bot must not respawn when the arena is full of another's turf")
+        assertEquals(0f, victim.spawnWarn, "no site should even be telegraphed")
+        for (yy in 0 until GH) for (xx in 0 until GW) {
+            val dx = xx + 0.5f - ARENA_CX; val dy = yy + 0.5f - ARENA_CY
+            if (dx * dx + dy * dy <= ARENA_R * ARENA_R)
+                assertEquals(filler.id + 1, w.owner[w.idx(xx, yy)].toInt(), "turf was overwritten")
+        }
+    }
+
+    @Test
+    fun respawnTelegraphsAndKeepsItsDistance() {
+        // The fix for "spawns too sudden": a returning bot first shows its site for SPAWN_WARN
+        // seconds, and the site is never close to a living head.
+        val w = World(seed = 17L)
+        w.reset(numBots = 3, numColors = 12)
+        val victim = w.players[3]
+        victim.alive = false; victim.respawn = 0.01f
+        tick(w, 0.2f)
+        assertFalse(victim.alive, "the bot must not pop in the instant its timer expires")
+        assertTrue(victim.spawnWarn > 0f, "its spawn site should be telegraphed first")
+        for (q in w.players) if (q.alive) {
+            val d = Math.hypot((q.x - (victim.spawnCx + 0.5f)).toDouble(), (q.y - (victim.spawnCy + 0.5f)).toDouble())
+            assertTrue(d >= SPAWN_CLEAR, "site is only $d cells from ${q.name}, want >= $SPAWN_CLEAR")
+        }
+        tick(w, SPAWN_WARN + 0.3f)
+        assertTrue(victim.alive, "the bot should land once the telegraph runs out")
+        assertEquals(0f, victim.spawnWarn, "the telegraph clears on landing")
+    }
+
+    @Test
+    fun respawnOffKeepsBotsDead() {
+        val w = World(seed = 5L)
+        w.respawnEnabled = false
+        w.reset(numBots = 3, numColors = 12)
+        val victim = w.players[2]
+        victim.alive = false; victim.respawn = 0.01f
+        tick(w, 5f)
+        assertFalse(victim.alive, "OFF must leave eliminated bots dead")
+    }
+
+    @Test
     fun areaCountMatchesGrid() {
         val w = World(seed = 7L)
         w.reset(numBots = 7, numColors = 12)

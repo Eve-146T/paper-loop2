@@ -136,11 +136,43 @@ class WorldRenderer {
             }
         }
 
-        // 5) bot trails (above all turfs) + every head on top
+        // 5) bot trails (above all turfs), pending-respawn telegraphs, then every head on top.
+        //    SpriteBatch.end() turns GL blending back OFF, so re-enable it here or the telegraph's
+        //    translucent disc would composite as solid colour.
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         sr.begin(ShapeRenderer.ShapeType.Filled)
         for (p in world.players) if (!p.isHuman && trailVisible(p, vx0, vx1, vy0, vy1)) drawTrailIfAny(p)
+        for (p in world.players) if (p.spawnWarn > 0f && spawnVisible(p, vx0, vx1, vy0, vy1)) drawSpawnMarker(p)
         for (p in world.players) if (p.alive && headVisible(p, vx0, vx1, vy0, vy1)) drawHead(p)
         sr.end()
+    }
+
+    /** Telegraph for a pending bot respawn: a translucent disc in the bot's colour with
+     *  a ring closing in on it, so a spawn can be seen coming and steered around (issue #2). Animated
+     *  off the countdown itself, so the renderer needs no clock of its own. */
+    private fun drawSpawnMarker(p: Player) {
+        val t = (1f - p.spawnWarn / SPAWN_WARN).coerceIn(0f, 1f)   // 0 -> 1 as the spawn approaches
+        val c = Palette.team(p.colorIdx)
+        val cx = p.spawnCx + 0.5f; val cy = p.spawnCy + 0.5f
+        sr.setColor(c.r, c.g, c.b, 0.07f + 0.13f * t)
+        sr.circle(cx, cy, START_R, 48)
+        sr.setColor(c.r, c.g, c.b, 0.25f + 0.45f * t)
+        ring(cx, cy, START_R, 0.45f)
+        sr.setColor(c.r, c.g, c.b, 0.35f * (1f - t))              // an outer ring closing in on it
+        ring(cx, cy, START_R * (2f - t), 0.35f)
+    }
+
+    /** A circle outline in world units (ShapeRenderer's Line mode can't do a world-space thickness). */
+    private fun ring(cx: Float, cy: Float, r: Float, thick: Float) {
+        val seg = 48
+        var px = cx + r; var py = cy
+        for (i in 1..seg) {
+            val a = i * TWO_PI / seg
+            val nx = cx + cos(a) * r; val ny = cy + sin(a) * r
+            sr.rectLine(px, py, nx, ny, thick)
+            px = nx; py = ny
+        }
     }
 
     private fun drawTrailIfAny(p: Player) {
@@ -159,6 +191,13 @@ class WorldRenderer {
         if (!p.hasTrail && !(p.dyingFrac > 0f && p.trailX.size >= 2)) return false
         val m = TRAIL_R + 1f
         return !(p.trMaxX + m < vx0 || p.trMinX - m > vx1 || p.trMaxY + m < vy0 || p.trMinY - m > vy1)
+    }
+
+    /** Is player [p]'s pending spawn telegraph (its widest ring) within the camera view rect? */
+    private fun spawnVisible(p: Player, vx0: Float, vx1: Float, vy0: Float, vy1: Float): Boolean {
+        val m = START_R * 2f
+        val cx = p.spawnCx + 0.5f; val cy = p.spawnCy + 0.5f
+        return !(cx + m < vx0 || cx - m > vx1 || cy + m < vy0 || cy - m > vy1)
     }
 
     /** Is player [p]'s head within the camera view rect (+ its half-extent)? */
